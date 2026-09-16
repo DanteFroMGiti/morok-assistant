@@ -22,6 +22,7 @@ build() {
 package() {
     cd "$pkgname-$pkgver"
     python -m installer --destdir="$pkgdir" --prefix=/usr dist/*.whl
+    sed -i '1c#!/usr/bin/python' "$pkgdir/usr/bin/morok-assistant"
     install -Dm644 morok-assistant.desktop \
         "$pkgdir/usr/share/applications/morok-assistant.desktop"
     install -Dm644 morok-icon.png \
