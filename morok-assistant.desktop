@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Морок
+Comment=Запустить настольного помощника Морока
+Exec=morok-assistant
+TryExec=morok-assistant
+Icon=morok-icon
+Terminal=false
+StartupNotify=false
+Categories=Utility;

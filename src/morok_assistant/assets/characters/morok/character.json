@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "id": "morok",
+  "name": "Морок",
+  "sprite": "sprites-v5.png",
+  "frame": {"width": 192, "height": 208},
+  "grid": {"columns": 8, "rows": 17},
+  "anchor": {"x": 96, "y": 200},
+  "default_scale": 1,
+  "animations": {
+    "idle": {
+      "frames": [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]],
+      "fps": 5,
+      "loop": true
+    },
+    "run_right": {
+      "frames": [[0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [6, 1], [7, 1]],
+      "fps": 12,
+      "loop": true
+    },
+    "run_left": {
+      "frames": [[0, 2], [1, 2], [2, 2], [3, 2], [4, 2], [5, 2], [6, 2], [7, 2]],
+      "fps": 12,
+      "loop": true
+    },
+    "wave": {
+      "frames": [[0, 3], [1, 3], [2, 3], [3, 3], [2, 3], [1, 3]],
+      "fps": 7,
+      "loop": false,
+      "fallback": "idle"
+    },
+    "jump": {
+      "frames": [[0, 4], [1, 4], [2, 4], [3, 4], [4, 4], [3, 4], [2, 4], [1, 4]],
+      "fps": 10,
+      "loop": false,
+      "fallback": "idle"
+    },
+    "failed": {
+      "frames": [[0, 5], [1, 5], [2, 5], [3, 5], [4, 5], [5, 5], [6, 5], [7, 5]],
+      "fps": 7,
+      "loop": false,
+      "fallback": "idle"
+    },
+    "waiting": {
+      "frames": [[0, 6], [1, 6], [2, 6], [3, 6], [4, 6], [5, 6]],
+      "fps": 5,
+      "loop": true
+    },
+    "review": {
+      "frames": [[0, 7], [1, 7], [2, 7], [3, 7], [4, 7], [5, 7]],
+      "fps": 6,
+      "loop": true
+    },
+    "thinking": {
+      "frames": [[0, 8], [1, 8], [2, 8], [3, 8], [4, 8], [5, 8]],
+      "fps": 5,
+      "loop": true
+    },
+    "mouse_watch": {
+      "frames": [[0, 9], [1, 9], [2, 9], [3, 9], [4, 9], [5, 9], [6, 9], [7, 9]],
+      "fps": 6,
+      "loop": false,
+      "fallback": "idle"
+    },
+    "sit_down": {
+      "frames": [[0, 11], [1, 11], [2, 11], [3, 11]],
+      "fps": 6,
+      "loop": false,
+      "fallback": "sitting"
+    },
+    "sitting": {
+      "frames": [[0, 12], [1, 12], [1, 12], [1, 12], [2, 12], [3, 12], [1, 12]],
+      "fps": 2,
+      "loop": true
+    },
+    "video_watching": {
+      "frames": [[0, 16], [1, 16], [2, 16], [1, 16], [3, 16], [2, 16]],
+      "fps": 1.4,
+      "loop": true
+    },
+    "video_watching_up": {
+      "frames": [[1, 13], [1, 13], [1, 13], [3, 12]],
+      "fps": 1.2,
+      "loop": true
+    },
+    "video_watching_down": {
+      "frames": [[2, 13], [2, 13], [2, 13], [3, 12]],
+      "fps": 1.2,
+      "loop": true
+    },
+    "music_listening": {
+      "frames": [[0, 12], [1, 12], [2, 12], [1, 12], [3, 12], [1, 12]],
+      "fps": 3.5,
+      "loop": true
+    },
+    "mouse_watch_sitting": {
+      "frames": [[0, 13], [1, 13], [2, 13], [3, 13]],
+      "fps": 5,
+      "loop": false,
+      "fallback": "sitting"
+    },
+    "curl_up": {
+      "frames": [[0, 14], [1, 14], [2, 14]],
+      "fps": 3,
+      "loop": false,
+      "fallback": "sleeping"
+    },
+    "sleeping": {
+      "frames": [[2, 14], [2, 14], [3, 14], [3, 14]],
+      "fps": 1.5,
+      "loop": true
+    },
+    "drag_hold": {
+      "frames": [[0, 15], [1, 15], [2, 15], [3, 15]],
+      "fps": 5,
+      "loop": true
+    }
+  }
+}
