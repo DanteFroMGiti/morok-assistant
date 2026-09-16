@@ -1,0 +1,20 @@
+pkgbase = morok-assistant
+	pkgdesc = Animated desktop companion and AI assistant for Linux
+	pkgver = 0.2.1
+	pkgrel = 1
+	url = https://github.com/DanteFroMGiti/morok-assistant
+	arch = any
+	license = custom
+	makedepends = python-build
+	makedepends = python-installer
+	makedepends = python-wheel
+	depends = python
+	depends = pyside6
+	depends = glib2
+	depends = xorg-xprop
+	optdepends = ollama: local AI models
+	optdepends = libpulse: detection of active audio playback through pactl
+	source = morok-assistant-0.2.1.tar.gz::https://github.com/DanteFroMGiti/morok-assistant/archive/refs/tags/v0.2.1.tar.gz
+	sha256sums = SKIP
+
+pkgname = morok-assistant

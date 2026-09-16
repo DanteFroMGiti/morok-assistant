@@ -12,7 +12,21 @@
 
 ## Установка
 
-На Linux Морок устанавливается без прав администратора:
+### CachyOS и Arch Linux
+
+Скачайте файл `morok-assistant-0.2.1-1-any.pkg.tar.zst` со страницы релиза и
+установите его через pacman:
+
+```bash
+sudo pacman -U morok-assistant-0.2.1-1-any.pkg.tar.zst
+```
+
+После установки Морок появится в меню приложений. Также его можно запустить командой
+`morok-assistant`. Удаление выполняется командой `sudo pacman -Rns morok-assistant`.
+
+### Другие дистрибутивы Linux
+
+Морок также устанавливается в домашнюю папку без прав администратора:
 
 ```bash
 git clone https://github.com/DanteFroMGiti/morok-assistant.git
