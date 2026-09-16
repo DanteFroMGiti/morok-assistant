@@ -6,7 +6,7 @@ arch=('any')
 url="https://github.com/DanteFroMGiti/morok-assistant"
 license=('custom')
 depends=('python' 'pyside6' 'glib2' 'xorg-xprop')
-makedepends=('python-build' 'python-installer' 'python-wheel')
+makedepends=('python-build' 'python-installer' 'python-setuptools' 'python-wheel')
 optdepends=(
     'ollama: local AI models'
     'libpulse: detection of active audio playback through pactl'
