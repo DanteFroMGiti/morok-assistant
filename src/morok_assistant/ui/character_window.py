@@ -89,8 +89,10 @@ class CharacterWindow(QWidget):
         self.scale = 1.0
         self.random = Random()
         self.jokes = jokes
-        self.joke_picker = JokePicker(self.random)
         self.ai_settings_store = ai_settings_store or AISettingsStore()
+        self.joke_picker = JokePicker(
+            self.random, self.ai_settings_store.path.with_name("joke-history.json")
+        )
         self.gesture_store = GestureSettingsStore(
             self.ai_settings_store.path.with_name("gestures.json")
         )

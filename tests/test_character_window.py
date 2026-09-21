@@ -125,12 +125,14 @@ def test_half_scale_and_cursor_glance(monkeypatch) -> None:
     assert app is not None
 
 
-def test_mouse_watch_continues_until_click_or_two_minutes(monkeypatch) -> None:
+def test_mouse_watch_continues_until_click_or_two_minutes(monkeypatch, tmp_path) -> None:
     clock = [0.0]
     monkeypatch.setattr("morok_assistant.ui.character_window.monotonic", lambda: clock[0])
     app = QApplication.instance() or QApplication([])
     manifest = CharacterRepository(bundled_characters_path()).get("morok")
-    window = CharacterWindow(manifest, EventBus())
+    window = CharacterWindow(
+        manifest, EventBus(), behavior_store=BehaviorSettingsStore(tmp_path / "behavior.json")
+    )
     window.timer.stop()
     window.SLEEP_AFTER_SECONDS = 10_000
     window._next_mouse_watch = 20.0

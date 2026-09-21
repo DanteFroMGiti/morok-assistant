@@ -1,5 +1,5 @@
 pkgname=morok-assistant
-pkgver=0.4.0
+pkgver=0.4.1
 pkgrel=1
 pkgdesc="Animated desktop companion and AI assistant for Linux"
 arch=('any')
