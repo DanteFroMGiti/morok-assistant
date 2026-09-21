@@ -241,7 +241,8 @@ class AISettingsDialog(QDialog):
         startup_group = QGroupBox("Приложения вместе с Мороком")
         startup_layout = QVBoxLayout(startup_group)
         startup_hint = QLabel(
-            "Отмеченные приложения будут запускаться один раз при каждом запуске Морока."
+            "При запуске Морока откроются только те из отмеченных приложений, "
+            "которые ещё не запущены."
         )
         startup_hint.setWordWrap(True)
         startup_layout.addWidget(startup_hint)
