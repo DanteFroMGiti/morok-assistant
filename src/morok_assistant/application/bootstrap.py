@@ -14,6 +14,7 @@ from morok_assistant.characters.repository import CharacterRepository
 from morok_assistant.core.events import EventBus
 from morok_assistant.jokes.repository import JokeRepository
 from morok_assistant.plugins.manager import PluginManager
+from morok_assistant.system.appearance import AppearanceStore
 from morok_assistant.system.autostart import project_root
 from morok_assistant.system.behavior_settings import BehaviorSettingsStore
 from morok_assistant.system.plasma import (
@@ -88,10 +89,12 @@ def run() -> int:
     window = CharacterWindow(
         manifest, events, JokeRepository(jokes_path()), AISettingsStore(),
         behavior_store=behavior_store,
+        appearance_store=AppearanceStore(),
         video_monitor=PlasmaVideoMonitor(bridge) if bridge else None,
         app_monitor=PlasmaApplicationMonitor(bridge) if bridge else None,
     )
-    window.move_to_default_position()
+    if not window.restore_appearance():
+        window.move_to_default_position()
     window.show()
     if bridge is not None:
         QTimer.singleShot(0, install_kwin_script)

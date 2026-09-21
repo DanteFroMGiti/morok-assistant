@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from math import hypot
 from random import Random
 from time import monotonic
@@ -27,6 +28,7 @@ from morok_assistant.jokes.repository import JokePicker, JokeRepository
 from morok_assistant.productivity.focus import FocusController
 from morok_assistant.productivity.reminders import ReminderManager, ReminderStore
 from morok_assistant.system.app_context import ActiveApplication, X11ActiveApplicationMonitor
+from morok_assistant.system.appearance import Appearance, AppearanceStore
 from morok_assistant.system.autostart import AutostartManager
 from morok_assistant.system.behavior_settings import BehaviorSettingsStore
 from morok_assistant.system.video import VideoWindow, X11VideoMonitor
@@ -51,6 +53,9 @@ class ApplicationMonitor(Protocol):
     def current(self) -> ActiveApplication | None: ...
 
 
+LOG = logging.getLogger(__name__)
+
+
 class CharacterWindow(QWidget):
     SIT_AFTER_SECONDS = 30.0
     SLEEP_AFTER_SECONDS = 3 * 60.0
@@ -66,6 +71,7 @@ class CharacterWindow(QWidget):
         jokes: JokeRepository | None = None,
         ai_settings_store: AISettingsStore | None = None,
         behavior_store: BehaviorSettingsStore | None = None,
+        appearance_store: AppearanceStore | None = None,
         video_monitor: VideoMonitor | None = None,
         app_monitor: ApplicationMonitor | None = None,
     ) -> None:
@@ -87,6 +93,7 @@ class CharacterWindow(QWidget):
             self.ai_settings_store.path.with_name("behavior.json")
         )
         self.behavior_settings = self.behavior_store.load()
+        self.appearance_store = appearance_store
         self.video_monitor = video_monitor or X11VideoMonitor.create_if_available()
         self.app_monitor = app_monitor or X11ActiveApplicationMonitor.create_if_available()
         self.ai_chat_dialog: AIChatDialog | None = None
@@ -995,6 +1002,8 @@ class CharacterWindow(QWidget):
                 if self.player.state == "drag_hold":
                     self._play_state("idle")
                 self.events.publish(Event("character.position.changed", (self.x(), self.y())))
+                if self._video_window_id is None:
+                    self._save_appearance()
                 if self.behavior_settings.watch_videos and self.video_monitor is not None:
                     QTimer.singleShot(150, self._resume_video_after_drag)
             event.accept()
@@ -1100,8 +1109,11 @@ class CharacterWindow(QWidget):
         menu.exec(event.globalPos())
 
     def set_scale(self, scale: float) -> None:
+        home_position = self._video_origin if self._video_window_id is not None else None
         self._mark_interaction()
         self._apply_scale(scale)
+        self._keep_on_screen()
+        self._save_appearance(home_position)
 
     def _apply_scale(self, scale: float) -> None:
         self.scale = max(0.5, float(scale))
@@ -1134,6 +1146,36 @@ class CharacterWindow(QWidget):
         area = screen.availableGeometry()
         margin = 24
         self.move(area.right() - self.width() - margin, area.bottom() - self.height() - margin)
+        self._save_appearance()
+
+    def restore_appearance(self) -> bool:
+        if self.appearance_store is None:
+            return False
+        appearance = self.appearance_store.load()
+        if appearance is None:
+            return False
+        self._apply_scale(appearance.scale)
+        center = QPoint(appearance.x + self.width() // 2, appearance.y + self.height() // 2)
+        screen = QApplication.screenAt(center)
+        if screen is None:
+            return False
+        area = screen.availableGeometry()
+        x = max(area.left(), min(appearance.x, area.right() - self.width() + 1))
+        y = max(area.top(), min(appearance.y, area.bottom() - self.height() + 1))
+        self.move(x, y)
+        return True
+
+    def _save_appearance(self, position: QPoint | None = None) -> None:
+        if self.appearance_store is None:
+            return
+        if self.peek_controller.active or self._reminder_active:
+            return
+        if position is None:
+            position = self.pos()
+        try:
+            self.appearance_store.save(Appearance(position.x(), position.y(), self.scale))
+        except OSError as error:
+            LOG.warning("Could not save Morok's appearance: %s", error)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if self._reminder_active and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
