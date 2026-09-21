@@ -27,6 +27,7 @@ HOVER_ACTIONS = {
 class GestureSettings:
     double_click: str = "wave"
     hover: str = "watch"
+    hover_cooldown_seconds: int = 8
 
 
 def default_gesture_settings_path() -> Path:
@@ -47,6 +48,7 @@ class GestureSettingsStore:
             return GestureSettings()
         double_click = raw.get("double_click")
         hover = raw.get("hover")
+        cooldown = raw.get("hover_cooldown_seconds", 8)
         return GestureSettings(
             double_click=(
                 double_click
@@ -54,11 +56,14 @@ class GestureSettingsStore:
                 else "wave"
             ),
             hover=hover if isinstance(hover, str) and hover in HOVER_ACTIONS else "watch",
+            hover_cooldown_seconds=cooldown if type(cooldown) is int and cooldown in {8, 30, 90, 300} else 8,
         )
 
     def save(self, settings: GestureSettings) -> None:
         if settings.double_click not in DOUBLE_CLICK_ACTIONS or settings.hover not in HOVER_ACTIONS:
             raise ValueError("Неизвестное действие жеста")
+        if settings.hover_cooldown_seconds not in {8, 30, 90, 300}:
+            raise ValueError("Неизвестная частота жеста")
         directory = self.path.parent
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(directory, 0o700)

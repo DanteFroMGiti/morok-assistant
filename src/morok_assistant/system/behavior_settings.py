@@ -8,6 +8,9 @@ from pathlib import Path
 
 from morok_assistant.system.wayland import WAYLAND_MODES
 
+PERSONALITY_MODES = {"quiet", "active", "curious"}
+REACTION_FREQUENCIES = {"off", "rare", "normal", "often"}
+
 
 @dataclass(frozen=True, slots=True)
 class BehaviorSettings:
@@ -17,6 +20,8 @@ class BehaviorSettings:
     react_to_code: bool = True
     break_reminders: bool = True
     wayland_mode: str = "auto"
+    personality_mode: str = "active"
+    reaction_frequency: str = "rare"
 
 
 def default_behavior_settings_path() -> Path:
@@ -36,6 +41,8 @@ class BehaviorSettingsStore:
         if not isinstance(raw, dict):
             return BehaviorSettings()
         mode = raw.get("wayland_mode", "auto")
+        personality = raw.get("personality_mode", "active")
+        frequency = raw.get("reaction_frequency", "rare")
         return BehaviorSettings(
             watch_videos=raw.get("watch_videos") is not False,
             react_to_games=raw.get("react_to_games") is not False,
@@ -43,6 +50,14 @@ class BehaviorSettingsStore:
             react_to_code=raw.get("react_to_code") is not False,
             break_reminders=raw.get("break_reminders") is not False,
             wayland_mode=mode if isinstance(mode, str) and mode in WAYLAND_MODES else "auto",
+            personality_mode=(
+                personality if isinstance(personality, str) and personality in PERSONALITY_MODES
+                else "active"
+            ),
+            reaction_frequency=(
+                frequency if isinstance(frequency, str) and frequency in REACTION_FREQUENCIES
+                else "rare"
+            ),
         )
 
     def save(self, settings: BehaviorSettings) -> None:

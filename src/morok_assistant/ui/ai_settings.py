@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -129,10 +130,38 @@ class AISettingsDialog(QDialog):
         self.hover.setCurrentIndex(self.hover.findData(gestures.hover))
         self.hover.currentIndexChanged.connect(self.interacted)
 
+        self.hover_cooldown = QComboBox()
+        for label, seconds in (("Часто · 8 с", 8), ("Обычно · 30 с", 30),
+                               ("Редко · 90 с", 90), ("Очень редко · 5 мин", 300)):
+            self.hover_cooldown.addItem(label, seconds)
+        self.hover_cooldown.setCurrentIndex(
+            self.hover_cooldown.findData(gestures.hover_cooldown_seconds)
+        )
+        self.hover_cooldown.currentIndexChanged.connect(self.interacted)
+
         gesture_group = QGroupBox("Жесты")
         gesture_form = QFormLayout(gesture_group)
         gesture_form.addRow("Двойной клик:", self.double_click)
         gesture_form.addRow("Наведение мыши:", self.hover)
+        gesture_form.addRow("Повтор реакции:", self.hover_cooldown)
+
+        self.personality_mode = QComboBox()
+        for label, value in (("Тихий — сидит и ждёт", "quiet"),
+                             ("Активный — гуляет и осматривается", "active"),
+                             ("Любознательный — спрашивает и помнит", "curious")):
+            self.personality_mode.addItem(label, value)
+        self.personality_mode.setCurrentIndex(
+            self.personality_mode.findData(behavior.personality_mode)
+        )
+        self.personality_mode.currentIndexChanged.connect(self.interacted)
+        self.reaction_frequency = QComboBox()
+        for label, value in (("Выключены", "off"), ("Редко", "rare"),
+                             ("Обычно", "normal"), ("Часто", "often")):
+            self.reaction_frequency.addItem(label, value)
+        self.reaction_frequency.setCurrentIndex(
+            self.reaction_frequency.findData(behavior.reaction_frequency)
+        )
+        self.reaction_frequency.currentIndexChanged.connect(self.interacted)
 
         self.autostart = QCheckBox("Запускать Морока при входе в систему")
         self.autostart.setChecked(self._initial_autostart)
@@ -167,6 +196,10 @@ class AISettingsDialog(QDialog):
 
         behavior_group = QGroupBox("Поведение")
         behavior_layout = QVBoxLayout(behavior_group)
+        behavior_layout.addWidget(QLabel("Характер Морока:"))
+        behavior_layout.addWidget(self.personality_mode)
+        behavior_layout.addWidget(QLabel("Редкие анимации и реакции:"))
+        behavior_layout.addWidget(self.reaction_frequency)
         behavior_layout.addWidget(self.autostart)
         behavior_layout.addWidget(self.watch_videos)
         behavior_layout.addWidget(self.react_to_games)
@@ -235,6 +268,9 @@ class AISettingsDialog(QDialog):
         behavior_page_layout.addWidget(gesture_group)
         behavior_page_layout.addWidget(behavior_group)
         behavior_page_layout.addStretch()
+        behavior_scroll = QScrollArea()
+        behavior_scroll.setWidgetResizable(True)
+        behavior_scroll.setWidget(behavior_page)
 
         startup_page = QWidget()
         startup_page_layout = QVBoxLayout(startup_page)
@@ -243,7 +279,7 @@ class AISettingsDialog(QDialog):
 
         tabs = QTabWidget()
         tabs.addTab(ai_page, "ИИ")
-        tabs.addTab(behavior_page, "Поведение")
+        tabs.addTab(behavior_scroll, "Поведение")
         tabs.addTab(startup_page, "Запуск программ")
 
         layout = QVBoxLayout(self)
@@ -417,6 +453,7 @@ class AISettingsDialog(QDialog):
         gestures = GestureSettings(
             double_click=self.double_click.currentData(),
             hover=self.hover.currentData(),
+            hover_cooldown_seconds=self.hover_cooldown.currentData(),
         )
         behavior = BehaviorSettings(
             watch_videos=self.watch_videos.isChecked(),
@@ -425,6 +462,8 @@ class AISettingsDialog(QDialog):
             react_to_code=self.react_to_code.isChecked(),
             break_reminders=self.break_reminders.isChecked(),
             wayland_mode=self.wayland_mode.currentData(),
+            personality_mode=self.personality_mode.currentData(),
+            reaction_frequency=self.reaction_frequency.currentData(),
         )
         try:
             self.store.save(settings)

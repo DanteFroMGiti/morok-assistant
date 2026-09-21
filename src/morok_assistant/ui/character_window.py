@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import os
+from dataclasses import replace
 from math import hypot
 from random import Random
 from time import monotonic
@@ -25,8 +27,10 @@ from morok_assistant.animation.player import AnimationPlayer
 from morok_assistant.core.events import Event, EventBus
 from morok_assistant.core.models import AnimationSpec, CharacterManifest
 from morok_assistant.jokes.repository import JokePicker, JokeRepository
+from morok_assistant.productivity.curiosity import CuriosityStore
 from morok_assistant.productivity.focus import FocusController
 from morok_assistant.productivity.reminders import ReminderManager, ReminderStore
+from morok_assistant.productivity.tasks import TaskManager, TaskStore
 from morok_assistant.system.app_context import ActiveApplication, X11ActiveApplicationMonitor
 from morok_assistant.system.appearance import Appearance, AppearanceStore
 from morok_assistant.system.autostart import AutostartManager
@@ -35,12 +39,14 @@ from morok_assistant.system.video import VideoWindow, X11VideoMonitor
 from morok_assistant.system.wayland import is_wayland_session
 from morok_assistant.ui.ai_chat import AIChatDialog
 from morok_assistant.ui.ai_settings import AISettingsDialog
+from morok_assistant.ui.curiosity import CuriosityDialog
 from morok_assistant.ui.focus import FocusDialog
 from morok_assistant.ui.gesture_settings import GestureSettingsStore
 from morok_assistant.ui.idle_peek import IdlePeekController
 from morok_assistant.ui.joke_bubble import JokeBubble
 from morok_assistant.ui.quick_actions import QuickActionsDialog
 from morok_assistant.ui.reminders import RemindersDialog
+from morok_assistant.ui.tasks import TasksDialog
 
 
 class VideoMonitor(Protocol):
@@ -100,6 +106,16 @@ class CharacterWindow(QWidget):
         self.reminders_dialog: RemindersDialog | None = None
         self.focus_dialog: FocusDialog | None = None
         self.quick_actions_dialog: QuickActionsDialog | None = None
+        self.tasks_dialog: TasksDialog | None = None
+        self.curiosity_dialog: CuriosityDialog | None = None
+        self.task_manager = TaskManager(
+            TaskStore(self.ai_settings_store.path.with_name("tasks.json")), self
+        )
+        self.curiosity_store = CuriosityStore(
+            self.ai_settings_store.path.with_name("memory.json")
+        )
+        self._pending_question: str | None = None
+        self._bubble_action: str | None = None
         self.reminder_manager = ReminderManager(
             ReminderStore(self.ai_settings_store.path.with_name("reminders.json")), self
         )
@@ -137,6 +153,12 @@ class CharacterWindow(QWidget):
         self._manual_video_placement = False
         self._video_arriving = False
         self._video_returning = False
+        self._quiet_placed = False
+        self._personality_arriving = False
+        self._next_roam = monotonic() + self.random.uniform(40, 70)
+        self._next_curiosity = monotonic() + 90
+        self._next_task_suggestion = monotonic() + 12 * 60
+        self._next_rare_reaction = monotonic() + self._reaction_delay()
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -182,6 +204,14 @@ class CharacterWindow(QWidget):
         self.video_move = QPropertyAnimation(self, b"pos", self)
         self.video_move.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self.video_move.finished.connect(self._on_video_move_finished)
+        self.personality_move = QPropertyAnimation(self, b"pos", self)
+        self.personality_move.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self.personality_move.finished.connect(self._on_personality_move_finished)
+        self.personality_timer = QTimer(self)
+        self.personality_timer.setInterval(5_000)
+        self.personality_timer.timeout.connect(self._personality_tick)
+        self.personality_timer.start()
+        QTimer.singleShot(500, self._apply_personality_mode)
         self.video_timer = QTimer(self)
         self.video_timer.setInterval(750)
         self.video_timer.timeout.connect(self._check_video_window)
@@ -198,6 +228,170 @@ class CharacterWindow(QWidget):
         self.reminder_manager.due.connect(self._on_reminder_due)
         self.focus_controller.notice.connect(self._on_focus_notice)
         self.focus_controller.changed.connect(self._on_focus_changed)
+
+    def _auto_peek_allowed(self) -> bool:
+        chatting = self.ai_chat_dialog is not None and self.ai_chat_dialog.isVisible()
+        return not (
+            self.behavior_settings.personality_mode == "quiet"
+            or chatting or self._game_quiet or self._sleep_pending
+            or self._mouse_watch_until
+            or self.focus_controller.phase in {"focus", "paused"}
+            or self._video_window_id is not None
+        )
+
+    def _reaction_delay(self) -> float:
+        intervals = {"off": (0, 0), "rare": (12, 20), "normal": (5, 9), "often": (2, 4)}
+        start, end = intervals[self.behavior_settings.reaction_frequency]
+        return self.random.uniform(start, end) * 60 if start else float("inf")
+
+    def _can_act_spontaneously(self) -> bool:
+        return not (
+            self._reminder_active or self._sleep_pending or self._drag_offset is not None
+            or self._mouse_watch_until or self.joke_bubble.isVisible()
+            or self._video_window_id is not None or self.peek_controller.active
+            or self._game_quiet or self.focus_controller.phase in {"focus", "paused"}
+            or (self.ai_chat_dialog is not None and self.ai_chat_dialog.isVisible())
+            or (self.tasks_dialog is not None and self.tasks_dialog.isVisible())
+            or (self.curiosity_dialog is not None and self.curiosity_dialog.isVisible())
+            or self.personality_move.state() == QPropertyAnimation.State.Running
+        )
+
+    def _screen_positions(self) -> list[QPoint]:
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            return []
+        area = screen.availableGeometry()
+        margin = 20
+        left = area.left() + margin
+        right = max(left, area.right() - self.width() - margin)
+        top = area.top() + margin
+        bottom = max(top, area.bottom() - self.height() - margin)
+        return [QPoint(x, y) for x, y in (
+            (left, top), (right, top), (left, bottom), (right, bottom),
+            ((left + right) // 2, bottom),
+        )]
+
+    def _move_for_personality(self, target: QPoint) -> None:
+        if is_wayland_session() and os.environ.get("QT_QPA_PLATFORM") != "xcb":
+            if self.behavior_settings.personality_mode == "quiet":
+                self._play_state("sitting" if "sitting" in self.manifest.animations else "idle")
+            return
+        if (target - self.pos()).manhattanLength() < 20:
+            self._personality_arriving = True
+            self._on_personality_move_finished()
+            return
+        self.personality_move.stop()
+        self._personality_arriving = True
+        self._play_state("run_right" if target.x() >= self.x() else "run_left")
+        distance = (target - self.pos()).manhattanLength()
+        self.personality_move.setDuration(max(900, min(4_000, distance * 5)))
+        self.personality_move.setStartValue(self.pos())
+        self.personality_move.setEndValue(target)
+        self.personality_move.start()
+
+    def _on_personality_move_finished(self) -> None:
+        if not self._personality_arriving:
+            return
+        self._personality_arriving = False
+        if self.behavior_settings.personality_mode == "quiet":
+            self._play_state("sitting" if "sitting" in self.manifest.animations else "idle")
+        else:
+            self._play_state("idle")
+
+    def _apply_personality_mode(self) -> None:
+        mode = self.behavior_settings.personality_mode
+        self.personality_move.stop()
+        self._personality_arriving = False
+        self.peek_controller.auto_peek_enabled = self._auto_peek_allowed()
+        if mode != "quiet":
+            self._quiet_placed = False
+            self._next_roam = monotonic() + self.random.uniform(25, 55)
+            if self.player.state == "sitting":
+                self._play_state("idle")
+            return
+        self._dismiss_joke()
+        self._mouse_watch_until = 0.0
+        if self._video_window_id is not None:
+            self._leave_video_window(restore=False, suppress=True)
+        if self.peek_controller.active:
+            self.peek_controller.restore()
+        if not self._can_act_spontaneously():
+            return
+        positions = self._screen_positions()
+        if positions and not self._quiet_placed:
+            cursor = QCursor.pos()
+            # The farthest corner from the pointer is a stable, unobtrusive spot.
+            target = max(positions[:4], key=lambda point: (point - cursor).manhattanLength())
+            self._quiet_placed = True
+            self._move_for_personality(target)
+        elif "sitting" in self.manifest.animations:
+            self._play_state("sitting")
+
+    def set_personality_mode(self, mode: str) -> None:
+        if mode not in {"quiet", "active", "curious"}:
+            return
+        try:
+            self.behavior_store.save(replace(self.behavior_settings, personality_mode=mode))
+        except OSError as error:
+            LOG.warning("Could not save Morok's behavior: %s", error)
+            return
+        self.behavior_settings = self.behavior_store.load()
+        self._apply_personality_mode()
+
+    def _personality_tick(self) -> None:
+        now = monotonic()
+        if self.behavior_settings.personality_mode == "quiet":
+            if not self._quiet_placed and self._can_act_spontaneously():
+                self._apply_personality_mode()
+            return
+        if not self._can_act_spontaneously():
+            return
+        if self.behavior_settings.personality_mode == "active" and now >= self._next_roam:
+            self._next_roam = now + self.random.uniform(45, 90)
+            positions = [point for point in self._screen_positions()
+                         if (point - self.pos()).manhattanLength() > self.width()]
+            if positions:
+                self._move_for_personality(self.random.choice(positions))
+        if self.behavior_settings.personality_mode == "curious" and now >= self._next_curiosity:
+            if self.joke_bubble.isVisible():
+                self._next_curiosity = now + 30
+            else:
+                self._next_curiosity = now + self.random.uniform(20 * 60, 40 * 60)
+            if self._pending_question is None and not self.joke_bubble.isVisible():
+                question = self.curiosity_store.next_question()
+                if question:
+                    self._pending_question = question
+                    self._show_joke(f"Можно спросить? {question}\nНажми на меня, чтобы ответить.")
+                    self._bubble_action = "curiosity"
+                else:
+                    memory = self.curiosity_store.recollection()
+                    if memory:
+                        self._show_joke(f"Помню, ты говорил: {memory.answer[:180]}")
+                        try:
+                            self.curiosity_store.mark_reminded(memory.question)
+                        except OSError as error:
+                            LOG.warning("Could not update memory: %s", error)
+        if now >= self._next_task_suggestion:
+            self._next_task_suggestion = now + self.random.uniform(35 * 60, 55 * 60)
+            if not self.joke_bubble.isVisible() and self._pending_question is None:
+                suggestion = self.task_manager.recommend()
+                if suggestion:
+                    self._show_joke(
+                        f"Сейчас стоит заняться: {suggestion.task.title}. "
+                        f"{suggestion.reason}. Нажми на сообщение, чтобы открыть задачи."
+                    )
+                    self._bubble_action = "tasks"
+        if now >= self._next_rare_reaction:
+            self._next_rare_reaction = now + self._reaction_delay()
+            if self.player.state in {"idle", "sitting"} and not self.joke_bubble.isVisible():
+                state = self.random.choice(["little_wave", "curious_glance", "thinking"])
+                if state in self.manifest.animations:
+                    self._play_state(state)
+                    QTimer.singleShot(3_000, lambda: self._finish_rare_reaction(state))
+
+    def _finish_rare_reaction(self, state: str) -> None:
+        if self.player.state == state and self._can_act_spontaneously():
+            self._play_state("idle")
 
     def _resize_to_character(self) -> None:
         self.resize(
@@ -225,15 +419,12 @@ class CharacterWindow(QWidget):
         self._next_mouse_watch = now + self.random.uniform(15, 35)
         self._mouse_watch_available = True
         self._sleep_pending = False
-        if hasattr(self, "peek_controller"):
-            chatting = self.ai_chat_dialog is not None and self.ai_chat_dialog.isVisible()
-            self.peek_controller.auto_peek_enabled = not (
-                chatting or self._game_quiet or self.focus_controller.phase in {"focus", "paused"}
-            )
-            self.peek_controller.restore()
         if self._mouse_watch_until:
             self._mouse_watch_until = 0.0
             self.update()
+        if hasattr(self, "peek_controller"):
+            self.peek_controller.auto_peek_enabled = self._auto_peek_allowed()
+            self.peek_controller.restore()
         if wake and self.player.state in {"sit_down", "sitting", "curl_up", "sleeping"}:
             self._play_state("idle")
 
@@ -251,7 +442,7 @@ class CharacterWindow(QWidget):
         self._sleep_pending = False
         self.atlas = atlas
         if hasattr(self, "peek_controller"):
-            self.peek_controller.auto_peek_enabled = True
+            self.peek_controller.auto_peek_enabled = self._auto_peek_allowed()
             self.peek_controller.update_character(manifest, atlas)
         self.scale = manifest.default_scale
         self.setWindowTitle(manifest.name)
@@ -275,14 +466,26 @@ class CharacterWindow(QWidget):
             or (self._app_kind == "music" and self.behavior_settings.react_to_music)
         ):
             return
+        if self.behavior_settings.personality_mode == "quiet":
+            if (
+                not self._sleep_pending and self._drag_offset is None
+                and {"curl_up", "sleeping"}.issubset(self.manifest.animations)
+                and now - self._last_interaction >= self.SLEEP_AFTER_SECONDS
+            ):
+                self._begin_sleep()
+            elif (
+                self.player.state == "idle" and not self._sleep_pending
+                and now - self._last_interaction >= self.SIT_AFTER_SECONDS
+                and "sit_down" in self.manifest.animations
+            ):
+                self._play_state("sit_down")
+            return
         if (
-            not self._sleep_pending
-            and self._video_window_id is None
-            and self._drag_offset is None
-            and {"curl_up", "sleeping"}.issubset(self.manifest.animations)
+            self.peek_controller.active and not self._sleep_pending
             and now - self._last_interaction >= self.SLEEP_AFTER_SECONDS
         ):
             self._begin_sleep()
+            return
         if (
             self.player.state == "idle"
             and self._video_window_id is None
@@ -298,6 +501,7 @@ class CharacterWindow(QWidget):
     def _check_video_window(self) -> None:
         if (
             self._reminder_active
+            or self.behavior_settings.personality_mode == "quiet"
             or not self.behavior_settings.watch_videos
             or self.video_monitor is None
             or self.focus_controller.phase in {"focus", "paused"}
@@ -344,6 +548,8 @@ class CharacterWindow(QWidget):
         if self._video_window_id is not None:
             self._leave_video_window(restore=False)
         self._video_window_id = video.window_id
+        self.personality_move.stop()
+        self._personality_arriving = False
         self._video_origin = self.pos()
         self._video_target = target
         self._video_side = side
@@ -468,10 +674,7 @@ class CharacterWindow(QWidget):
         else:
             self._video_returning = False
             self._play_state("idle")
-        chatting = self.ai_chat_dialog is not None and self.ai_chat_dialog.isVisible()
-        self.peek_controller.auto_peek_enabled = not (
-            chatting or self._game_quiet or self.focus_controller.phase in {"focus", "paused"}
-        )
+        self.peek_controller.auto_peek_enabled = self._auto_peek_allowed()
         self._last_interaction = monotonic()
         self.events.publish(Event("character.video.stopped", old_id))
 
@@ -511,7 +714,7 @@ class CharacterWindow(QWidget):
             if now >= self._mouse_watch_until:
                 self._mouse_watch_until = 0.0
                 self._mouse_watch_available = False
-                self.peek_controller.auto_peek_enabled = True
+                self.peek_controller.auto_peek_enabled = self._auto_peek_allowed()
                 self.update()
             elif watch is not None:
                 self._update_mouse_watch_direction(watch)
@@ -571,6 +774,7 @@ class CharacterWindow(QWidget):
         chatting = self.ai_chat_dialog is not None and self.ai_chat_dialog.isVisible()
         if (
             self.peek_controller.active
+            or self.behavior_settings.personality_mode == "quiet"
             or self._sleep_pending
             or self._reminder_active
             or chatting
@@ -590,6 +794,7 @@ class CharacterWindow(QWidget):
         self.events.publish(Event("character.joke.told", joke))
 
     def _show_joke(self, text: str) -> None:
+        self._bubble_action = None
         screen = self.screen() or QApplication.primaryScreen()
         if screen is None:
             return
@@ -620,6 +825,8 @@ class CharacterWindow(QWidget):
             previous_video_setting = self.behavior_settings.watch_videos
             self.behavior_settings = self.behavior_store.load()
             self._next_hover_gesture = 0.0
+            self._next_rare_reaction = monotonic() + self._reaction_delay()
+            self._apply_personality_mode()
             if self.behavior_settings.watch_videos and self.video_monitor is not None:
                 self.video_timer.start()
                 self._check_video_window()
@@ -658,7 +865,7 @@ class CharacterWindow(QWidget):
             and not self._game_quiet
             and self.focus_controller.phase not in {"focus", "paused"}
         ):
-            self.peek_controller.auto_peek_enabled = True
+            self.peek_controller.auto_peek_enabled = self._auto_peek_allowed()
 
     def stop_ai(self) -> None:
         if self.ai_chat_dialog is not None:
@@ -671,6 +878,34 @@ class CharacterWindow(QWidget):
         self.reminders_dialog.show()
         self.reminders_dialog.raise_()
         self.reminders_dialog.activateWindow()
+
+    def open_tasks(self) -> None:
+        self._mark_interaction()
+        if self.tasks_dialog is None:
+            self.tasks_dialog = TasksDialog(self.task_manager, self.focus_controller, self)
+        self.tasks_dialog.refresh()
+        self.tasks_dialog.show()
+        self.tasks_dialog.raise_()
+        self.tasks_dialog.activateWindow()
+
+    def open_curiosity(self) -> None:
+        self._mark_interaction()
+        if self.curiosity_dialog is None:
+            self.curiosity_dialog = CuriosityDialog(self.curiosity_store, self)
+            self.curiosity_dialog.answered.connect(self._on_curiosity_answered)
+        self.curiosity_dialog.refresh()
+        if self._pending_question:
+            self.curiosity_dialog.show_question(self._pending_question)
+        else:
+            self.curiosity_dialog.show()
+            self.curiosity_dialog.raise_()
+            self.curiosity_dialog.activateWindow()
+
+    def _on_curiosity_answered(self, question: str) -> None:
+        if question == self._pending_question:
+            self._pending_question = None
+        self._dismiss_joke()
+        self._next_curiosity = monotonic() + self.random.uniform(20 * 60, 40 * 60)
 
     def open_focus(self) -> None:
         self._mark_interaction()
@@ -708,6 +943,8 @@ class CharacterWindow(QWidget):
         self._reminder_text = text
         self._sleep_pending = False
         self._mouse_watch_until = 0.0
+        self.personality_move.stop()
+        self._personality_arriving = False
         self.video_move.stop()
         if self._video_window_id is not None:
             self._leave_video_window(restore=False, suppress=True)
@@ -802,10 +1039,9 @@ class CharacterWindow(QWidget):
         self._keep_on_screen()
         self._dismiss_joke()
         self._play_state("idle")
-        chatting = self.ai_chat_dialog is not None and self.ai_chat_dialog.isVisible()
-        self.peek_controller.auto_peek_enabled = not (
-            chatting or self._game_quiet or self.focus_controller.phase in {"focus", "paused"}
-        )
+        self.peek_controller.auto_peek_enabled = self._auto_peek_allowed()
+        if self.behavior_settings.personality_mode == "quiet":
+            self._quiet_placed = False
         self.events.publish(Event("productivity.reminder.acknowledged"))
 
     def _on_focus_notice(self, text: str) -> None:
@@ -826,14 +1062,14 @@ class CharacterWindow(QWidget):
             if "sitting" in self.manifest.animations:
                 self._play_state("sitting")
         elif not quiet and self._focus_was_quiet:
-            chatting = self.ai_chat_dialog is not None and self.ai_chat_dialog.isVisible()
-            self.peek_controller.auto_peek_enabled = not chatting and not self._game_quiet
+            self.peek_controller.auto_peek_enabled = self._auto_peek_allowed()
             if self.player.state == "sitting":
                 self._play_state("idle")
         self._focus_was_quiet = quiet
 
     def _check_app_context(self) -> None:
-        if self.app_monitor is None or self._reminder_active:
+        if (self.app_monitor is None or self._reminder_active
+                or self.behavior_settings.personality_mode == "quiet"):
             return
         application = self.app_monitor.current()
         kind = application.kind if application is not None else "other"
@@ -852,8 +1088,7 @@ class CharacterWindow(QWidget):
                 if self._video_window_id is not None:
                     self._leave_video_window(restore=True)
             else:
-                chatting = self.ai_chat_dialog is not None and self.ai_chat_dialog.isVisible()
-                self.peek_controller.auto_peek_enabled = not chatting
+                self.peek_controller.auto_peek_enabled = self._auto_peek_allowed()
 
         if self.focus_controller.phase in {"focus", "paused"} or self._video_window_id is not None:
             return
@@ -913,10 +1148,17 @@ class CharacterWindow(QWidget):
     def _dismiss_joke(self) -> None:
         self.joke_hide_timer.stop()
         self.joke_bubble.hide()
+        self._bubble_action = None
 
     def _on_bubble_dismissed(self) -> None:
         if self._reminder_active:
             self._acknowledge_reminder()
+        elif self._bubble_action == "tasks":
+            self.open_tasks()
+            self._dismiss_joke()
+        elif self._bubble_action == "curiosity":
+            self.open_curiosity()
+            self._dismiss_joke()
         else:
             self._dismiss_joke()
 
@@ -957,6 +1199,8 @@ class CharacterWindow(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
+            self.personality_move.stop()
+            self._personality_arriving = False
             if self._reminder_cursor_locked:
                 self.setFocus(Qt.FocusReason.MouseFocusReason)
                 event.accept()
@@ -1006,6 +1250,8 @@ class CharacterWindow(QWidget):
                     self._save_appearance()
                 if self.behavior_settings.watch_videos and self.video_monitor is not None:
                     QTimer.singleShot(150, self._resume_video_after_drag)
+            elif self._pending_question:
+                self.open_curiosity()
             event.accept()
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
@@ -1028,7 +1274,7 @@ class CharacterWindow(QWidget):
         now = monotonic()
         if now < self._next_hover_gesture:
             return
-        self._next_hover_gesture = now + 8.0
+        self._next_hover_gesture = now + self.gesture_settings.hover_cooldown_seconds
         self._perform_gesture_action(self.gesture_settings.hover)
 
     def _perform_gesture_action(self, action: str) -> None:
@@ -1084,8 +1330,19 @@ class CharacterWindow(QWidget):
             scale_menu.addAction(action)
 
         menu.addSeparator()
+        mode_menu = menu.addMenu("Режим поведения")
+        for mode, label in (("quiet", "Тихий"), ("active", "Активный"),
+                            ("curious", "Любознательный")):
+            action = mode_menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(self.behavior_settings.personality_mode == mode)
+            action.triggered.connect(lambda _checked=False, value=mode: self.set_personality_mode(value))
         commands_action = menu.addAction("Команды и поиск…")
         commands_action.triggered.connect(self.open_quick_actions)
+        tasks_action = menu.addAction("Задачи и план дня…")
+        tasks_action.triggered.connect(self.open_tasks)
+        curiosity_action = menu.addAction("Вопросы и память…")
+        curiosity_action.triggered.connect(self.open_curiosity)
         reminders_action = menu.addAction("Таймеры и напоминания…")
         reminders_action.triggered.connect(self.open_reminders)
         focus_action = menu.addAction("Режим концентрации…")
@@ -1191,6 +1448,8 @@ class CharacterWindow(QWidget):
             super().keyPressEvent(event)
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self.personality_timer.stop()
+        self.personality_move.stop()
         self.reminder_escalation_timer.stop()
         self._release_reminder_cursor()
         self.stop_ai()
@@ -1206,4 +1465,8 @@ class CharacterWindow(QWidget):
             self.reminders_dialog.close()
         if self.focus_dialog is not None:
             self.focus_dialog.close()
+        if self.tasks_dialog is not None:
+            self.tasks_dialog.close()
+        if self.curiosity_dialog is not None:
+            self.curiosity_dialog.close()
         super().closeEvent(event)

@@ -18,12 +18,15 @@ def test_gesture_choices_persist_and_change_double_click_and_hover(tmp_path, mon
     dialog = AISettingsDialog(store)
     dialog.double_click.setCurrentIndex(dialog.double_click.findData("sit"))
     dialog.hover.setCurrentIndex(dialog.hover.findData("watch"))
+    dialog.hover_cooldown.setCurrentIndex(dialog.hover_cooldown.findData(90))
     dialog._save()
     dialog.close()
 
     gesture_path = tmp_path / "gestures.json"
     gestures = GestureSettingsStore(gesture_path).load()
-    assert (gestures.double_click, gestures.hover) == ("sit", "watch")
+    assert (gestures.double_click, gestures.hover, gestures.hover_cooldown_seconds) == (
+        "sit", "watch", 90
+    )
     assert gesture_path.stat().st_mode & 0o777 == 0o600
 
     manifest = CharacterRepository(bundled_characters_path()).get("morok")

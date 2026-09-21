@@ -9,7 +9,7 @@ from morok_assistant.characters.repository import CharacterRepository
 from morok_assistant.core.events import EventBus
 from morok_assistant.jokes.repository import JokeRepository
 from morok_assistant.system.app_context import ActiveApplication
-from morok_assistant.system.behavior_settings import BehaviorSettingsStore
+from morok_assistant.system.behavior_settings import BehaviorSettings, BehaviorSettingsStore
 from morok_assistant.system.video import VideoWindow
 from morok_assistant.ui.character_window import CharacterWindow
 
@@ -167,12 +167,14 @@ def test_mouse_watch_continues_until_click_or_two_minutes(monkeypatch) -> None:
     assert app is not None
 
 
-def test_sleep_stays_visible_until_morok_is_touched(monkeypatch) -> None:
+def test_sleep_stays_visible_until_morok_is_touched(monkeypatch, tmp_path) -> None:
     clock = [0.0]
     monkeypatch.setattr("morok_assistant.ui.character_window.monotonic", lambda: clock[0])
     app = QApplication.instance() or QApplication([])
     manifest = CharacterRepository(bundled_characters_path()).get("morok")
-    window = CharacterWindow(manifest, EventBus())
+    behavior = BehaviorSettingsStore(tmp_path / "behavior.json")
+    behavior.save(BehaviorSettings(personality_mode="quiet"))
+    window = CharacterWindow(manifest, EventBus(), behavior_store=behavior)
     window.timer.stop()
 
     clock[0] = 180.1
@@ -188,7 +190,7 @@ def test_sleep_stays_visible_until_morok_is_touched(monkeypatch) -> None:
 
     window._mark_interaction()
     assert window.player.state == "idle"
-    assert window.peek_controller.auto_peek_enabled
+    assert not window.peek_controller.auto_peek_enabled
 
     window.close()
     assert app is not None
