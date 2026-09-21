@@ -29,6 +29,7 @@ def test_behavior_checkboxes_apply_autostart_and_video_setting(tmp_path) -> None
     dialog.watch_videos.setChecked(False)
     dialog.react_to_music.setChecked(False)
     dialog.react_to_code.setChecked(False)
+    dialog.wayland_mode.setCurrentIndex(dialog.wayland_mode.findData("native"))
     dialog.startup_apps.item(0).setCheckState(Qt.CheckState.Unchecked)
     dialog._save()
 
@@ -38,6 +39,7 @@ def test_behavior_checkboxes_apply_autostart_and_video_setting(tmp_path) -> None
     assert not behavior.watch_videos
     assert not behavior.react_to_music
     assert not behavior.react_to_code
+    assert behavior.wayland_mode == "native"
     assert startup_apps.load() == [
         StartupApplication("Telegram", "/apps/telegram.desktop", enabled=False)
     ]

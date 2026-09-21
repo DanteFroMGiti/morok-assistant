@@ -474,3 +474,32 @@ def test_unanswered_reminder_chases_cursor_until_acknowledged(tmp_path, monkeypa
 
     window.close()
     assert app is not None
+
+
+def test_wayland_reminder_waits_for_click_without_warping_pointer(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_SESSION_TYPE", "wayland")
+    app = QApplication.instance() or QApplication([])
+    manifest = CharacterRepository(bundled_characters_path()).get("morok")
+    window = CharacterWindow(
+        manifest, EventBus(), ai_settings_store=AISettingsStore(tmp_path / "ai.json"),
+        video_monitor=FakeVideoMonitor(None),  # type: ignore[arg-type]
+    )
+    window.timer.stop()
+    window._on_reminder_due("Чай")
+    window._reminder_chasing = True
+
+    def forbid_warp(_point):
+        raise AssertionError("Wayland cannot warp the pointer")
+
+    monkeypatch.setattr(
+        "morok_assistant.ui.character_window.QCursor",
+        SimpleNamespace(setPos=forbid_warp),
+    )
+
+    window._lock_reminder_cursor(QPoint(100, 100))
+
+    assert not window._reminder_chasing
+    assert not window._reminder_cursor_locked
+    assert "Нажмите на меня" in window.joke_bubble.label.text()
+    window.close()
+    assert app is not None

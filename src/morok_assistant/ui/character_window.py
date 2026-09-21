@@ -3,6 +3,7 @@ from __future__ import annotations
 from math import hypot
 from random import Random
 from time import monotonic
+from typing import Protocol
 
 from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRect, Qt, QTimer
 from PySide6.QtGui import (
@@ -25,10 +26,11 @@ from morok_assistant.core.models import AnimationSpec, CharacterManifest
 from morok_assistant.jokes.repository import JokePicker, JokeRepository
 from morok_assistant.productivity.focus import FocusController
 from morok_assistant.productivity.reminders import ReminderManager, ReminderStore
-from morok_assistant.system.app_context import X11ActiveApplicationMonitor
+from morok_assistant.system.app_context import ActiveApplication, X11ActiveApplicationMonitor
 from morok_assistant.system.autostart import AutostartManager
 from morok_assistant.system.behavior_settings import BehaviorSettingsStore
 from morok_assistant.system.video import VideoWindow, X11VideoMonitor
+from morok_assistant.system.wayland import is_wayland_session
 from morok_assistant.ui.ai_chat import AIChatDialog
 from morok_assistant.ui.ai_settings import AISettingsDialog
 from morok_assistant.ui.focus import FocusDialog
@@ -37,6 +39,16 @@ from morok_assistant.ui.idle_peek import IdlePeekController
 from morok_assistant.ui.joke_bubble import JokeBubble
 from morok_assistant.ui.quick_actions import QuickActionsDialog
 from morok_assistant.ui.reminders import RemindersDialog
+
+
+class VideoMonitor(Protocol):
+    def current(self) -> VideoWindow | None: ...
+
+    def close(self) -> None: ...
+
+
+class ApplicationMonitor(Protocol):
+    def current(self) -> ActiveApplication | None: ...
 
 
 class CharacterWindow(QWidget):
@@ -54,8 +66,8 @@ class CharacterWindow(QWidget):
         jokes: JokeRepository | None = None,
         ai_settings_store: AISettingsStore | None = None,
         behavior_store: BehaviorSettingsStore | None = None,
-        video_monitor: X11VideoMonitor | None = None,
-        app_monitor: X11ActiveApplicationMonitor | None = None,
+        video_monitor: VideoMonitor | None = None,
+        app_monitor: ApplicationMonitor | None = None,
     ) -> None:
         super().__init__()
         self.events = events
@@ -746,6 +758,13 @@ class CharacterWindow(QWidget):
 
     def _lock_reminder_cursor(self, cursor: QPoint) -> None:
         if self._reminder_cursor_locked:
+            return
+        if is_wayland_session():
+            # Wayland does not allow a normal client to confine the global pointer.
+            self._reminder_chasing = False
+            self._play_state("idle")
+            self._show_joke(f"⏰ {self._reminder_text}\n\nЯ рядом! Нажмите на меня, чтобы закрыть напоминание.")
+            self.joke_hide_timer.stop()
             return
         self._reminder_cursor_locked = True
         self._reminder_cursor_anchor = QPoint(cursor)

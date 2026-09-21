@@ -6,6 +6,8 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from morok_assistant.system.wayland import WAYLAND_MODES
+
 
 @dataclass(frozen=True, slots=True)
 class BehaviorSettings:
@@ -14,6 +16,7 @@ class BehaviorSettings:
     react_to_music: bool = True
     react_to_code: bool = True
     break_reminders: bool = True
+    wayland_mode: str = "auto"
 
 
 def default_behavior_settings_path() -> Path:
@@ -32,12 +35,14 @@ class BehaviorSettingsStore:
             return BehaviorSettings()
         if not isinstance(raw, dict):
             return BehaviorSettings()
+        mode = raw.get("wayland_mode", "auto")
         return BehaviorSettings(
             watch_videos=raw.get("watch_videos") is not False,
             react_to_games=raw.get("react_to_games") is not False,
             react_to_music=raw.get("react_to_music") is not False,
             react_to_code=raw.get("react_to_code") is not False,
             break_reminders=raw.get("break_reminders") is not False,
+            wayland_mode=mode if isinstance(mode, str) and mode in WAYLAND_MODES else "auto",
         )
 
     def save(self, settings: BehaviorSettings) -> None:

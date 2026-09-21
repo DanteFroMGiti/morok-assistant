@@ -153,6 +153,18 @@ class AISettingsDialog(QDialog):
         self.break_reminders.setChecked(behavior.break_reminders)
         self.break_reminders.toggled.connect(self.interacted)
 
+        self.wayland_mode = QComboBox()
+        self.wayland_mode.addItem("Авто (XWayland при наличии)", "auto")
+        self.wayland_mode.addItem("XWayland", "xwayland")
+        self.wayland_mode.addItem("Нативный Wayland (ограничено)", "native")
+        self.wayland_mode.setCurrentIndex(self.wayland_mode.findData(behavior.wayland_mode))
+        self.wayland_mode.currentIndexChanged.connect(self.interacted)
+        wayland_hint = QLabel(
+            "Режим применяется после перезапуска. Нативный Wayland пока не позволяет "
+            "свободно перемещать Морока и выглядывать из-за края."
+        )
+        wayland_hint.setWordWrap(True)
+
         behavior_group = QGroupBox("Поведение")
         behavior_layout = QVBoxLayout(behavior_group)
         behavior_layout.addWidget(self.autostart)
@@ -161,6 +173,9 @@ class AISettingsDialog(QDialog):
         behavior_layout.addWidget(self.react_to_music)
         behavior_layout.addWidget(self.react_to_code)
         behavior_layout.addWidget(self.break_reminders)
+        behavior_layout.addWidget(QLabel("Режим Wayland:"))
+        behavior_layout.addWidget(self.wayland_mode)
+        behavior_layout.addWidget(wayland_hint)
 
         self.application_index = ApplicationIndex()
         self.startup_app_picker = QComboBox()
@@ -409,6 +424,7 @@ class AISettingsDialog(QDialog):
             react_to_music=self.react_to_music.isChecked(),
             react_to_code=self.react_to_code.isChecked(),
             break_reminders=self.break_reminders.isChecked(),
+            wayland_mode=self.wayland_mode.currentData(),
         )
         try:
             self.store.save(settings)

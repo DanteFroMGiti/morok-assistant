@@ -1,5 +1,5 @@
 pkgname=morok-assistant
-pkgver=0.2.1
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="Animated desktop companion and AI assistant for Linux"
 arch=('any')
@@ -10,6 +10,8 @@ makedepends=('python-build' 'python-installer' 'python-setuptools' 'python-wheel
 optdepends=(
     'ollama: local AI models'
     'libpulse: detection of active audio playback through pactl'
+    'xorg-xwayland: desktop character movement in Wayland sessions'
+    'kconfig: KDE Plasma Wayland window integration'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "morok-assistant"
-version = "0.2.1"
+version = "0.3.0"
 description = "Modular desktop character and future system assistant"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,6 +26,8 @@ morok_assistant = [
     "assets/*.txt",
     "assets/characters/*/*.json",
     "assets/characters/*/sprites-v5.png",
+    "assets/kwin/*/*.json",
+    "assets/kwin/*/contents/code/*.js",
 ]
 
 [tool.pytest.ini_options]

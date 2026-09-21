@@ -15,10 +15,18 @@ from morok_assistant.core.events import EventBus
 from morok_assistant.jokes.repository import JokeRepository
 from morok_assistant.plugins.manager import PluginManager
 from morok_assistant.system.autostart import project_root
+from morok_assistant.system.behavior_settings import BehaviorSettingsStore
+from morok_assistant.system.plasma import (
+    PlasmaApplicationMonitor,
+    PlasmaBridge,
+    PlasmaVideoMonitor,
+    install_kwin_script,
+)
 from morok_assistant.system.startup_apps import (
     StartupApplicationsStore,
     launch_startup_applications,
 )
+from morok_assistant.system.wayland import configure_platform, is_plasma_wayland
 from morok_assistant.ui.character_window import CharacterWindow
 
 
@@ -55,8 +63,11 @@ def application_icon_path() -> Path | None:
 
 
 def run() -> int:
+    behavior_store = BehaviorSettingsStore()
+    configure_platform(behavior_store.load().wayland_mode)
     app = QApplication(sys.argv)
     app.setApplicationName("Morok Assistant")
+    app.setDesktopFileName("morok-assistant")
     app.setQuitOnLastWindowClosed(True)
     runtime_directory = Path(os.environ.get("XDG_RUNTIME_DIR", tempfile.gettempdir()))
     instance_lock = QLockFile(str(runtime_directory / f"morok-assistant-{os.getuid()}.lock"))
@@ -71,9 +82,20 @@ def run() -> int:
     repository = CharacterRepository(bundled_characters_path())
     manifest = repository.get("morok")
 
-    window = CharacterWindow(manifest, events, JokeRepository(jokes_path()), AISettingsStore())
+    bridge = PlasmaBridge() if is_plasma_wayland() else None
+    if bridge is not None and not bridge.start():
+        bridge = None
+    window = CharacterWindow(
+        manifest, events, JokeRepository(jokes_path()), AISettingsStore(),
+        behavior_store=behavior_store,
+        video_monitor=PlasmaVideoMonitor(bridge) if bridge else None,
+        app_monitor=PlasmaApplicationMonitor(bridge) if bridge else None,
+    )
     window.move_to_default_position()
     window.show()
+    if bridge is not None:
+        QTimer.singleShot(0, install_kwin_script)
+        app.aboutToQuit.connect(bridge.stop)
     startup_apps = StartupApplicationsStore()
     QTimer.singleShot(1_000, lambda: launch_startup_applications(startup_apps))
     plugins.start_all()

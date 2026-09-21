@@ -72,7 +72,8 @@ class X11ActiveApplicationMonitor:
 
     @classmethod
     def create_if_available(cls) -> X11ActiveApplicationMonitor | None:
-        if os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
+        if (os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+                and os.environ.get("QT_QPA_PLATFORM") != "xcb"):
             return None
         try:
             return cls()

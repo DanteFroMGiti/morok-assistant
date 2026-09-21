@@ -66,6 +66,7 @@ class X11IdleMonitor:
 
     @classmethod
     def create_if_available(cls) -> X11IdleMonitor | None:
+        # XWayland's idle time excludes input directed at native Wayland windows.
         if os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
             return None
         try:

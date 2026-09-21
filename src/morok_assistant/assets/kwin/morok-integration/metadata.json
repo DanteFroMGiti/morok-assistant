@@ -1,0 +1,12 @@
+{
+  "KPlugin": {
+    "Name": "Morok desktop integration",
+    "Description": "Window information and desktop companion presentation for Morok",
+    "Id": "morok-integration",
+    "Version": "0.3.0",
+    "License": "Custom"
+  },
+  "X-Plasma-API": "javascript",
+  "X-Plasma-MainScript": "code/main.js",
+  "KPackageStructure": "KWin/Script"
+}
